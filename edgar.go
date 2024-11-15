@@ -52,6 +52,17 @@ func WithUserAgent(userAgent string) ClientOption {
 	}
 }
 
+// DownloadFile retrieves the contents of a file at the specified URL
+func (c *Client) DownloadFile(ctx context.Context, url string) ([]byte, error) {
+	resp, err := c.get(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
+}
+
 // Directory represents a single file in a directory listing
 type Directory struct {
 	LastModified time.Time `json:"lastModified"`
@@ -71,7 +82,7 @@ func (c *Client) Index(ctx context.Context, cik string, filter *IndexFilter) ([]
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	url := fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/index.json", normalizedCIK)
 
-	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +152,7 @@ func (c *Client) FilingContents(ctx context.Context, cik string, accessionNumber
 
 	url := fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s/index.json", normalizedCIK, accessionNumber)
 
-	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +250,7 @@ func (c *Client) DailyIndex(ctx context.Context, scope *IndexScope) ([]*IndexEnt
 		}
 	}
 
-	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +319,7 @@ func (c *Client) FullIndex(ctx context.Context, scope *IndexScope) ([]*IndexEntr
 		}
 	}
 
-	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +389,7 @@ type TickerFilter struct {
 
 // CompanyTickers retrieves and optionally filters the list of company tickers
 func (c *Client) CompanyTickers(ctx context.Context, filter *TickerFilter) ([]*CompanyTicker, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "https://www.sec.gov/files/company_tickers.json", nil)
+	resp, err := c.get(ctx, "https://www.sec.gov/files/company_tickers.json")
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +458,7 @@ type ExchangeFilter struct {
 
 // CompanyTickersWithExchange retrieves and optionally filters the list of exchange tickers
 func (c *Client) CompanyTickersWithExchange(ctx context.Context, filter *ExchangeFilter) ([]*CompanyTickerExchange, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "https://www.sec.gov/files/company_tickers_exchange.json", nil)
+	resp, err := c.get(ctx, "https://www.sec.gov/files/company_tickers_exchange.json")
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +554,7 @@ type MutualFundFilter struct {
 
 // MutualFundTickers retrieves and optionally filters the list of mutual fund tickers
 func (c *Client) MutualFundTickers(ctx context.Context, filter *MutualFundFilter) ([]*MutualFundTicker, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "https://www.sec.gov/files/company_tickers_mf.json", nil)
+	resp, err := c.get(ctx, "https://www.sec.gov/files/company_tickers_mf.json")
 	if err != nil {
 		return nil, err
 	}
@@ -636,7 +647,7 @@ func (c *Client) Company(ctx context.Context, cik string) (*Company, error) {
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	filename := fmt.Sprintf("CIK%s.json", normalizedCIK)
 
-	submissions, err := c.fetchSubmissionsFile(ctx, filename)
+	submissions, err := c.submissionsFile(ctx, filename)
 	if err != nil {
 		return nil, fmt.Errorf("fetching company data: %w", err)
 	}
@@ -689,7 +700,7 @@ func (c *Client) Filings(ctx context.Context, cik string, filter *FilingFilter) 
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	filename := fmt.Sprintf("CIK%s.json", normalizedCIK)
 
-	mainSubmissions, err := c.fetchSubmissionsFile(ctx, filename)
+	mainSubmissions, err := c.submissionsFile(ctx, filename)
 	if err != nil {
 		return nil, fmt.Errorf("fetching main filings: %w", err)
 	}
@@ -702,7 +713,7 @@ func (c *Client) Filings(ctx context.Context, cik string, filter *FilingFilter) 
 	allFilings = append(allFilings, mainFilings...)
 
 	for _, file := range mainSubmissions.Filings.Files {
-		additionalSubmissions, err := c.fetchSubmissionsFile(ctx, file.Name)
+		additionalSubmissions, err := c.submissionsFile(ctx, file.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fetching additional filings file %s: %w", file.Name, err)
 		}
@@ -837,10 +848,10 @@ func processFilings(recent rawFilings) ([]*Filing, error) {
 	return filings, nil
 }
 
-func (c *Client) fetchSubmissionsFile(ctx context.Context, filename string) (*rawSubmissions, error) {
+func (c *Client) submissionsFile(ctx context.Context, filename string) (*rawSubmissions, error) {
 	url := fmt.Sprintf("https://data.sec.gov/submissions/%s", filename)
 
-	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -850,16 +861,15 @@ func (c *Client) fetchSubmissionsFile(ctx context.Context, filename string) (*ra
 	if err := json.NewDecoder(resp.Body).Decode(&submissions); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
-
 	return &submissions, nil
 }
 
-func (c *Client) doRequest(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+func (c *Client) get(ctx context.Context, url string) (*http.Response, error) {
 	if err := c.rateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter wait: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
