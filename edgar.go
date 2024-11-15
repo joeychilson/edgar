@@ -66,7 +66,6 @@ func (c *Client) FileContents(ctx context.Context, url string) ([]byte, error) {
 type IndexEntry struct {
 	LastModified time.Time `json:"lastModified"`
 	Name         string    `json:"name"`
-	Type         string    `json:"type"`
 	Size         string    `json:"size"`
 	Url          string    `json:"url"`
 }
@@ -134,7 +133,6 @@ func (c *Client) DailyIndex(ctx context.Context, year, quarter int) ([]*IndexEnt
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
-			Type:         item.Type,
 			Url:          fmt.Sprintf("%s/%s", url, item.Href),
 			Size:         item.Size,
 		})
@@ -201,7 +199,6 @@ func (c *Client) FullIndex(ctx context.Context, year, quarter int) ([]*IndexEntr
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
-			Type:         item.Type,
 			Url:          fmt.Sprintf("%s/%s", url, item.Href),
 			Size:         item.Size,
 		})
