@@ -129,6 +129,7 @@ type File struct {
 
 // FileFilter provides filtering options for filing directory entries
 type FileFilter struct {
+	Name       string // Filter by file name (case-insensitive)
 	Extension  string // Filter by file extension (e.g., ".htm", ".xml")
 	MaxResults int    // Limit the number of results
 }
@@ -164,6 +165,9 @@ func (c *Client) FilingContents(ctx context.Context, cik string, accessionNumber
 	files := make([]*File, 0, len(filingDir.Directory.Items))
 	for _, file := range filingDir.Directory.Items {
 		if filter != nil {
+			if filter.Name != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(filter.Name)) {
+				continue
+			}
 			if filter.Extension != "" && !strings.HasSuffix(strings.ToLower(file.Name), strings.ToLower(filter.Extension)) {
 				continue
 			}
