@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,190 +63,109 @@ func (c *Client) FileContents(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// IndexEntry represents a single entry in the daily index directory
-type IndexEntry struct {
-	LastModified time.Time `json:"lastModified"`
-	Name         string    `json:"name"`
-	Size         string    `json:"size"`
-	Url          string    `json:"url"`
+// FilerMatch represents an entity name to CIK mapping
+type FilerMatch struct {
+	Name string `json:"name"`
+	CIK  string `json:"cik"`
 }
 
-func validateDailyIndexRange(year, quarter int) error {
-	currentYear := time.Now().Year()
-	currentQuarter := (int(time.Now().Month())-1)/3 + 1
-
-	if year < 1994 || year > currentYear {
-		return fmt.Errorf("year must be between 1994 and %d", currentYear)
-	}
-
-	if quarter < 1 || quarter > 4 {
-		return fmt.Errorf("quarter must be between 1 and 4")
-	}
-
-	if year == 1994 && quarter < 3 {
-		return fmt.Errorf("for 1994, quarter must be 3 or 4")
-	}
-
-	if year == currentYear && quarter > currentQuarter {
-		return fmt.Errorf("cannot request future quarter %d for year %d", quarter, year)
-	}
-	return nil
+// FilerFilterOptions provides filtering options for filer searches
+type FilerFilterOptions struct {
+	Contains string   // Filter filer names containing this string (case-insensitive)
+	CIKs     []string // Filter by specific CIK numbers
+	Limit    int      // Limit number of results
 }
 
-// DailyIndex retrieves the daily filings index directory listing for a specific year and quarter
-func (c *Client) DailyIndex(ctx context.Context, year, quarter int) ([]*IndexEntry, error) {
-	if err := validateDailyIndexRange(year, quarter); err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/%d/QTR%d", "https://www.sec.gov/Archives/edgar/daily-index", year, quarter)
-
-	resp, err := c.get(ctx, fmt.Sprintf("%s/index.json", url))
+// SearchFilers retrieves and filters filer names and CIK numbers
+func (c *Client) SearchFilers(ctx context.Context, opts *FilerFilterOptions) ([]*FilerMatch, error) {
+	resp, err := c.get(ctx, "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var indexDir struct {
-		Directory struct {
-			Items []struct {
-				LastModified string `json:"last-modified"`
-				Name         string `json:"name"`
-				Type         string `json:"type"`
-				Href         string `json:"href"`
-				Size         string `json:"size"`
-			} `json:"item"`
-			Name      string `json:"name"`
-			ParentDir string `json:"parent-dir"`
-		} `json:"directory"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&indexDir); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	entries := make([]*IndexEntry, 0, len(indexDir.Directory.Items))
-	for _, item := range indexDir.Directory.Items {
-		modTime, err := time.Parse("01/02/2006 03:04:05 PM", item.LastModified)
-		if err != nil {
-			continue
-		}
-
-		entries = append(entries, &IndexEntry{
-			LastModified: modTime,
-			Name:         item.Name,
-			Url:          fmt.Sprintf("%s/%s", url, item.Href),
-			Size:         item.Size,
-		})
-	}
-	return entries, nil
-}
-
-func validateFullIndexRange(year, quarter int) error {
-	currentYear := time.Now().Year()
-	currentQuarter := (int(time.Now().Month())-1)/3 + 1
-
-	if year < 1993 || year > currentYear {
-		return fmt.Errorf("year must be between 1993 and %d", currentYear)
-	}
-
-	if quarter < 1 || quarter > 4 {
-		return fmt.Errorf("quarter must be between 1 and 4")
-	}
-
-	if year == currentYear && quarter > currentQuarter {
-		return fmt.Errorf("cannot request future quarter %d for year %d", quarter, quarter)
-	}
-	return nil
-}
-
-// FullIndex retrieves the full index directory listing for a specific year and quarter
-func (c *Client) FullIndex(ctx context.Context, year, quarter int) ([]*IndexEntry, error) {
-	if err := validateFullIndexRange(year, quarter); err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/%d/QTR%d", "https://www.sec.gov/Archives/edgar/full-index", year, quarter)
-
-	resp, err := c.get(ctx, fmt.Sprintf("%s/index.json", url))
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var indexDir struct {
-		Directory struct {
-			Items []struct {
-				LastModified string `json:"last-modified"`
-				Name         string `json:"name"`
-				Type         string `json:"type"`
-				Href         string `json:"href"`
-				Size         string `json:"size"`
-			} `json:"item"`
-			Name      string `json:"name"`
-			ParentDir string `json:"parent-dir"`
-		} `json:"directory"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&indexDir); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 
-	entries := make([]*IndexEntry, 0, len(indexDir.Directory.Items))
-	for _, item := range indexDir.Directory.Items {
-		modTime, err := time.Parse("01/02/2006 03:04:05 PM", item.LastModified)
-		if err != nil {
+	lines := strings.Split(string(data), "\n")
+	matches := make([]*FilerMatch, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
 
-		entries = append(entries, &IndexEntry{
-			LastModified: modTime,
-			Name:         item.Name,
-			Url:          fmt.Sprintf("%s/%s", url, item.Href),
-			Size:         item.Size,
+		fields := strings.Split(line, ":")
+		if len(fields) < 3 {
+			continue
+		}
+
+		name := strings.TrimSpace(fields[0])
+		cik := strings.TrimLeft(fields[1], "0")
+		cik = fmt.Sprintf("%010s", cik)
+
+		if opts != nil {
+			if len(opts.CIKs) > 0 && !slices.Contains(opts.CIKs, cik) {
+				continue
+			}
+			if opts.Contains != "" && !strings.Contains(
+				strings.ToLower(name),
+				strings.ToLower(opts.Contains),
+			) {
+				continue
+			}
+		}
+
+		matches = append(matches, &FilerMatch{
+			Name: name,
+			CIK:  cik,
 		})
 	}
-	return entries, nil
+
+	if opts != nil && opts.Limit > 0 && len(matches) > opts.Limit {
+		matches = matches[:opts.Limit]
+	}
+	return matches, nil
 }
 
-// Company represents a company ticker symbol with exchange information
-type Company struct {
-	CIK      string `json:"cik"`
-	Name     string `json:"name"`
-	Ticker   string `json:"ticker"`
-	Exchange string `json:"exchange"`
+// CompanyMatch represents a company name to CIK mapping
+type CompanyMatch struct {
+	CIK          string `json:"cik"`
+	Name         string `json:"name"`
+	Ticker       string `json:"ticker"`
+	ExchangeName string `json:"exchangeName"`
 }
 
-// String returns a string representation of the company ticker with exchange
-func (cte Company) String() string {
-	return fmt.Sprintf("%010s    %-8s %-10s %-10s", cte.CIK, cte.Ticker, cte.Exchange, cte.Name)
+// CompanyFilterOptions provides filtering options for company tickers
+type CompanyFilterOptions struct {
+	Tickers   []string // Filter by specific ticker symbols
+	CIKs      []string // Filter by specific CIK numbers
+	Exchanges []string // Filter by specific exchanges
+	Contains  string   // Filter company names containing this string (case-insensitive)
+	Limit     int      // Limit the number of results
 }
 
-// CompanyListFilter provides filtering options for company tickers
-type CompanyListFilter struct {
-	Tickers    []string // Filter by specific ticker symbols
-	CIKs       []string // Filter by specific CIK numbers
-	Exchanges  []string // Filter by specific exchanges
-	Contains   string   // Filter company names containing this string (case-insensitive)
-	MaxResults int      // Limit the number of results
-}
-
-// CompanyList retrieves and optionally filters the list of company tickers
-func (c *Client) CompanyList(ctx context.Context, filter *CompanyListFilter) ([]*Company, error) {
+// SearchCompanies retrieves a list of company ticker symbols and exchange information
+func (c *Client) SearchCompanies(ctx context.Context, opts *CompanyFilterOptions) ([]*CompanyMatch, error) {
 	resp, err := c.get(ctx, "https://www.sec.gov/files/company_tickers_exchange.json")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var rawResponse struct {
+	var responseData struct {
 		Fields []string `json:"fields"`
 		Data   [][]any  `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rawResponse); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	companies := make([]*Company, 0, len(rawResponse.Data))
-	for _, row := range rawResponse.Data {
+	companies := make([]*CompanyMatch, 0, len(responseData.Data))
+	for _, row := range responseData.Data {
 		if len(row) != 4 {
 			continue
 		}
@@ -271,33 +191,33 @@ func (c *Client) CompanyList(ctx context.Context, filter *CompanyListFilter) ([]
 			continue
 		}
 
-		if filter != nil {
-			if len(filter.CIKs) > 0 && !slices.Contains(filter.CIKs, cikStr) {
+		if opts != nil {
+			if len(opts.CIKs) > 0 && !slices.Contains(opts.CIKs, cikStr) {
 				continue
 			}
-			if len(filter.Tickers) > 0 && !slices.Contains(filter.Tickers, ticker) {
+			if len(opts.Tickers) > 0 && !slices.Contains(opts.Tickers, ticker) {
 				continue
 			}
-			if len(filter.Exchanges) > 0 && !slices.Contains(filter.Exchanges, exchange) {
+			if len(opts.Exchanges) > 0 && !slices.Contains(opts.Exchanges, exchange) {
 				continue
 			}
-			if filter.Contains != "" && !strings.Contains(
+			if opts.Contains != "" && !strings.Contains(
 				strings.ToLower(name),
-				strings.ToLower(filter.Contains),
+				strings.ToLower(opts.Contains),
 			) {
 				continue
 			}
 		}
-		companies = append(companies, &Company{
-			CIK:      cikStr,
-			Name:     name,
-			Ticker:   ticker,
-			Exchange: exchange,
+		companies = append(companies, &CompanyMatch{
+			CIK:          cikStr,
+			Name:         name,
+			Ticker:       ticker,
+			ExchangeName: exchange,
 		})
 	}
 
-	if filter != nil && filter.MaxResults > 0 && len(companies) > filter.MaxResults {
-		companies = companies[:filter.MaxResults]
+	if opts != nil && opts.Limit > 0 && len(companies) > opts.Limit {
+		companies = companies[:opts.Limit]
 	}
 	return companies, nil
 }
@@ -306,18 +226,19 @@ func (c *Client) CompanyList(ctx context.Context, filter *CompanyListFilter) ([]
 type DirectoryEntry struct {
 	LastModified time.Time `json:"lastModified"`
 	Name         string    `json:"name"`
-	Url          string    `json:"url"`
+	URL          string    `json:"url"`
+	Size         int64     `json:"size,omitempty"`
 }
 
-// DirectoryFilter provides filtering options for index entries
-type DirectoryFilter struct {
-	StartDate  time.Time // Filter entries modified after this date
-	EndDate    time.Time // Filter entries modified before this date
-	MaxResults int       // Limit the number of results
+// FilerDirectoryFilterOptions provides filtering options for index entries
+type FilerDirectoryFilterOptions struct {
+	StartDate time.Time // Filter entries modified after this date
+	EndDate   time.Time // Filter entries modified before this date
+	Limit     int       // Limit the number of results
 }
 
-// CompanyDirectory retrieves the contents of a company filing directory
-func (c *Client) CompanyDirectory(ctx context.Context, cik string, filter *DirectoryFilter) ([]*DirectoryEntry, error) {
+// FilerDirectory retrieves the contents of a specific filer directory
+func (c *Client) FilerDirectory(ctx context.Context, cik string, opts *FilerDirectoryFilterOptions) ([]*DirectoryEntry, error) {
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	url := fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/index.json", normalizedCIK)
 
@@ -327,7 +248,7 @@ func (c *Client) CompanyDirectory(ctx context.Context, cik string, filter *Direc
 	}
 	defer resp.Body.Close()
 
-	var indexDir struct {
+	var directoryData struct {
 		Directory struct {
 			Items []struct {
 				LastModified string `json:"last-modified"`
@@ -338,54 +259,50 @@ func (c *Client) CompanyDirectory(ctx context.Context, cik string, filter *Direc
 			ParentDir string `json:"parent-dir"`
 		} `json:"directory"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&indexDir); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&directoryData); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	entries := make([]*DirectoryEntry, 0, len(indexDir.Directory.Items))
-	for _, item := range indexDir.Directory.Items {
+	entries := make([]*DirectoryEntry, 0, len(directoryData.Directory.Items))
+	for _, item := range directoryData.Directory.Items {
 		modTime, err := time.Parse("2006-01-02 15:04:05", item.LastModified)
 		if err != nil {
 			continue
 		}
-		if filter != nil {
-			if !filter.StartDate.IsZero() && modTime.Before(filter.StartDate) {
+		if opts != nil {
+			if !opts.StartDate.IsZero() && modTime.Before(opts.StartDate) {
 				continue
 			}
-			if !filter.EndDate.IsZero() && modTime.After(filter.EndDate) {
+			if !opts.EndDate.IsZero() && modTime.After(opts.EndDate) {
 				continue
 			}
 		}
+
+		size, _ := strconv.ParseInt(item.Size, 10, 64)
+
 		entries = append(entries, &DirectoryEntry{
 			LastModified: modTime,
 			Name:         item.Name,
-			Url:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s", normalizedCIK, item.Name),
+			Size:         size,
+			URL:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s", normalizedCIK, item.Name),
 		})
 	}
 
-	if filter != nil && filter.MaxResults > 0 && len(entries) > filter.MaxResults {
-		entries = entries[:filter.MaxResults]
+	if opts != nil && opts.Limit > 0 && len(entries) > opts.Limit {
+		entries = entries[:opts.Limit]
 	}
 	return entries, nil
 }
 
-// FilingDocument represents a single file in a filing directory
-type FilingDocument struct {
-	LastModified time.Time `json:"lastModified"`
-	Name         string    `json:"name"`
-	Size         string    `json:"size"`
-	Url          string    `json:"url"`
+// FilingDirectoryFilterOptions provides filtering options for filing directory entries
+type FilingDirectoryFilterOptions struct {
+	DocumentName  string // Filter by document name
+	FileExtension string // Filter by document extension (e.g., ".htm", ".xml")
+	Limit         int    // Limit the number of results
 }
 
-// DocumentFilter provides filtering options for filing directory entries
-type DocumentFilter struct {
-	Document   string // Filter by document name
-	Extension  string // Filter by document extension (e.g., ".htm", ".xml")
-	MaxResults int    // Limit the number of results
-}
-
-// FilingDocuments retrieves the contents of a specific filing directory
-func (c *Client) FilingDocuments(ctx context.Context, cik string, accessionNumber string, filter *DocumentFilter) ([]*FilingDocument, error) {
+// FilingDirectory retrieves the contents of a specific filing directory
+func (c *Client) FilingDirectory(ctx context.Context, cik string, accessionNumber string, opts *FilingDirectoryFilterOptions) ([]*DirectoryEntry, error) {
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	accessionNumber = strings.ReplaceAll(accessionNumber, "-", "")
 
@@ -397,7 +314,7 @@ func (c *Client) FilingDocuments(ctx context.Context, cik string, accessionNumbe
 	}
 	defer resp.Body.Close()
 
-	var filingDir struct {
+	var filingDirectoryData struct {
 		Directory struct {
 			Items []struct {
 				LastModified string `json:"last-modified"`
@@ -408,40 +325,44 @@ func (c *Client) FilingDocuments(ctx context.Context, cik string, accessionNumbe
 			ParentDir string `json:"parent-dir"`
 		} `json:"directory"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&filingDir); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&filingDirectoryData); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	files := make([]*FilingDocument, 0, len(filingDir.Directory.Items))
-	for _, file := range filingDir.Directory.Items {
-		if filter != nil {
-			if filter.Document != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(filter.Document)) {
+	documents := make([]*DirectoryEntry, 0, len(filingDirectoryData.Directory.Items))
+	for _, file := range filingDirectoryData.Directory.Items {
+		if opts != nil {
+			if opts.DocumentName != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(opts.DocumentName)) {
 				continue
 			}
-			if filter.Extension != "" && !strings.HasSuffix(strings.ToLower(file.Name), strings.ToLower(filter.Extension)) {
+			if opts.FileExtension != "" && !strings.HasSuffix(strings.ToLower(file.Name), strings.ToLower(opts.FileExtension)) {
 				continue
 			}
 		}
+
 		modTime, err := time.Parse("2006-01-02 15:04:05", file.LastModified)
 		if err != nil {
 			continue
 		}
-		files = append(files, &FilingDocument{
+
+		size, _ := strconv.ParseInt(file.Size, 10, 64)
+
+		documents = append(documents, &DirectoryEntry{
 			LastModified: modTime,
 			Name:         file.Name,
-			Size:         file.Size,
-			Url:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s/%s", normalizedCIK, accessionNumber, file.Name),
+			Size:         size,
+			URL:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s/%s", normalizedCIK, accessionNumber, file.Name),
 		})
 	}
 
-	if filter != nil && filter.MaxResults > 0 && len(files) > filter.MaxResults {
-		files = files[:filter.MaxResults]
+	if opts != nil && opts.Limit > 0 && len(documents) > opts.Limit {
+		documents = documents[:opts.Limit]
 	}
-	return files, nil
+	return documents, nil
 }
 
-// CompanyProfile represents a company's information from SEC submissions
-type CompanyProfile struct {
+// Filer represents a filer's profile information
+type Filer struct {
 	CIK                  string   `json:"cik"`
 	EntityType           string   `json:"entityType"`
 	SIC                  string   `json:"sic"`
@@ -455,12 +376,12 @@ type CompanyProfile struct {
 	Category             string   `json:"category"`
 	FiscalYearEnd        string   `json:"fiscalYearEnd"`
 	StateOfIncorporation string   `json:"stateOfIncorporation"`
-	Phone                string   `json:"phone"`
+	PhoneNumber          string   `json:"phoneNumber"`
 	Flags                string   `json:"flags"`
 }
 
-// CompanyProfile retrieves company information for a given CIK
-func (c *Client) CompanyProfile(ctx context.Context, cik string) (*CompanyProfile, error) {
+// Filer retrieves a filer's profile information
+func (c *Client) Filer(ctx context.Context, cik string) (*Filer, error) {
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	filename := fmt.Sprintf("CIK%s.json", normalizedCIK)
 
@@ -469,7 +390,7 @@ func (c *Client) CompanyProfile(ctx context.Context, cik string) (*CompanyProfil
 		return nil, fmt.Errorf("fetching company data: %w", err)
 	}
 
-	return &CompanyProfile{
+	return &Filer{
 		CIK:                  submissions.CIK,
 		EntityType:           submissions.EntityType,
 		SIC:                  submissions.SIC,
@@ -483,7 +404,7 @@ func (c *Client) CompanyProfile(ctx context.Context, cik string) (*CompanyProfil
 		Category:             submissions.Category,
 		FiscalYearEnd:        submissions.FiscalYearEnd,
 		StateOfIncorporation: submissions.StateOfIncorp,
-		Phone:                submissions.Phone,
+		PhoneNumber:          submissions.Phone,
 		Flags:                submissions.Flags,
 	}, nil
 }
@@ -504,16 +425,16 @@ type Filing struct {
 	PrimaryDocumentDescription string    `json:"primaryDocumentDescription"`
 }
 
-// FilingFilter is used to filter filings
-type FilingFilter struct {
-	StartDate  time.Time
-	EndDate    time.Time
-	Forms      []string
-	MaxResults int
+// FilingFilterOptions is used to filter filings
+type FilingFilterOptions struct {
+	StartDate time.Time
+	EndDate   time.Time
+	Forms     []string
+	Limit     int
 }
 
-// CompanyFilings retrieves and filters filings for a given CIK
-func (c *Client) CompanyFilings(ctx context.Context, cik string, filter *FilingFilter) ([]*Filing, error) {
+// Filings retrieves and filters filings for a given CIK
+func (c *Client) Filings(ctx context.Context, cik string, opts *FilingFilterOptions) ([]*Filing, error) {
 	normalizedCIK := fmt.Sprintf("%010s", strings.TrimLeft(cik, "0"))
 	filename := fmt.Sprintf("CIK%s.json", normalizedCIK)
 
@@ -523,7 +444,7 @@ func (c *Client) CompanyFilings(ctx context.Context, cik string, filter *FilingF
 	}
 
 	allFilings := make([]*Filing, 0)
-	mainFilings, err := processFilings(mainSubmissions.Filings.Recent)
+	mainFilings, err := parseFilings(mainSubmissions.Filings.Recent)
 	if err != nil {
 		return nil, fmt.Errorf("processing main filings: %w", err)
 	}
@@ -535,7 +456,7 @@ func (c *Client) CompanyFilings(ctx context.Context, cik string, filter *FilingF
 			return nil, fmt.Errorf("fetching additional filings file %s: %w", file.Name, err)
 		}
 
-		additionalFilings, err := processFilings(additionalSubmissions.Filings.Recent)
+		additionalFilings, err := parseFilings(additionalSubmissions.Filings.Recent)
 		if err != nil {
 			return nil, fmt.Errorf("processing additional filings from %s: %w", file.Name, err)
 		}
@@ -543,21 +464,21 @@ func (c *Client) CompanyFilings(ctx context.Context, cik string, filter *FilingF
 	}
 
 	var filtered []*Filing
-	if filter != nil {
+	if opts != nil {
 		for _, filing := range allFilings {
-			if !filter.StartDate.IsZero() && filing.FilingDate.Before(filter.StartDate) {
+			if !opts.StartDate.IsZero() && filing.FilingDate.Before(opts.StartDate) {
 				continue
 			}
-			if !filter.EndDate.IsZero() && filing.FilingDate.After(filter.EndDate) {
+			if !opts.EndDate.IsZero() && filing.FilingDate.After(opts.EndDate) {
 				continue
 			}
-			if len(filter.Forms) > 0 && !slices.Contains(filter.Forms, filing.Form) {
+			if len(opts.Forms) > 0 && !slices.Contains(opts.Forms, filing.Form) {
 				continue
 			}
 			filtered = append(filtered, filing)
 		}
-		if filter.MaxResults > 0 && len(filtered) > filter.MaxResults {
-			filtered = filtered[:filter.MaxResults]
+		if opts.Limit > 0 && len(filtered) > opts.Limit {
+			filtered = filtered[:opts.Limit]
 		}
 	} else {
 		filtered = allFilings
@@ -565,7 +486,7 @@ func (c *Client) CompanyFilings(ctx context.Context, cik string, filter *FilingF
 	return filtered, nil
 }
 
-type rawSubmissions struct {
+type submissionsResponse struct {
 	CIK           string   `json:"cik"`
 	EntityType    string   `json:"entityType"`
 	SIC           string   `json:"sic"`
@@ -582,7 +503,7 @@ type rawSubmissions struct {
 	Phone         string   `json:"phone"`
 	Flags         string   `json:"flags"`
 	Filings       struct {
-		Recent rawFilings `json:"recent"`
+		Recent filingsData `json:"recent"`
 		Files  []struct {
 			Name        string `json:"name"`
 			FilingCount int    `json:"filingCount"`
@@ -592,7 +513,7 @@ type rawSubmissions struct {
 	} `json:"filings"`
 }
 
-type rawFilings struct {
+type filingsData struct {
 	AccessionNumbers []string `json:"accessionNumber"`
 	Forms            []string `json:"form"`
 	FilingDates      []string `json:"filingDate"`
@@ -607,7 +528,7 @@ type rawFilings struct {
 	PrimaryDocDesc   []string `json:"primaryDocDescription"`
 }
 
-func processFilings(recent rawFilings) ([]*Filing, error) {
+func parseFilings(recent filingsData) ([]*Filing, error) {
 	filingCount := len(recent.AccessionNumbers)
 	filings := make([]*Filing, 0, filingCount)
 
@@ -665,7 +586,7 @@ func processFilings(recent rawFilings) ([]*Filing, error) {
 	return filings, nil
 }
 
-func (c *Client) submissionsFile(ctx context.Context, filename string) (*rawSubmissions, error) {
+func (c *Client) submissionsFile(ctx context.Context, filename string) (*submissionsResponse, error) {
 	url := fmt.Sprintf("https://data.sec.gov/submissions/%s", filename)
 
 	resp, err := c.get(ctx, url)
@@ -674,7 +595,7 @@ func (c *Client) submissionsFile(ctx context.Context, filename string) (*rawSubm
 	}
 	defer resp.Body.Close()
 
-	var submissions rawSubmissions
+	var submissions submissionsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&submissions); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
