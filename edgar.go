@@ -67,7 +67,7 @@ func (c *Client) DownloadFile(ctx context.Context, url string) ([]byte, error) {
 type Directory struct {
 	LastModified time.Time `json:"lastModified"`
 	Name         string    `json:"name"`
-	Link         string    `json:"link"`
+	Url          string    `json:"url"`
 }
 
 // IndexFilter provides filtering options for index entries
@@ -120,7 +120,7 @@ func (c *Client) Index(ctx context.Context, cik string, filter *IndexFilter) ([]
 		entries = append(entries, &Directory{
 			LastModified: modTime,
 			Name:         item.Name,
-			Link:         fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s", normalizedCIK, item.Name),
+			Url:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s", normalizedCIK, item.Name),
 		})
 	}
 
@@ -135,7 +135,7 @@ type File struct {
 	LastModified time.Time `json:"lastModified"`
 	Name         string    `json:"name"`
 	Size         string    `json:"size"`
-	Link         string    `json:"link"`
+	Url          string    `json:"url"`
 }
 
 // FileFilter provides filtering options for filing directory entries
@@ -191,7 +191,7 @@ func (c *Client) FilingContents(ctx context.Context, cik string, accessionNumber
 			LastModified: modTime,
 			Name:         file.Name,
 			Size:         file.Size,
-			Link:         fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s/%s", normalizedCIK, accessionNumber, file.Name),
+			Url:          fmt.Sprintf("https://www.sec.gov/Archives/edgar/data/%s/%s/%s", normalizedCIK, accessionNumber, file.Name),
 		})
 	}
 
@@ -207,7 +207,7 @@ type IndexEntry struct {
 	Name         string    `json:"name"`
 	Type         string    `json:"type"`
 	Size         string    `json:"size"`
-	Link         string    `json:"link"`
+	Url          string    `json:"url"`
 }
 
 // IndexScope represents the scope of the daily index request
@@ -280,18 +280,18 @@ func (c *Client) DailyIndex(ctx context.Context, scope *IndexScope) ([]*IndexEnt
 			continue
 		}
 
-		link := baseURL
+		url := baseURL
 		if item.Type == "dir" {
-			link = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
+			url = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
 		} else {
-			link = fmt.Sprintf("%s/%s", baseURL, item.Href)
+			url = fmt.Sprintf("%s/%s", baseURL, item.Href)
 		}
 
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
 			Type:         item.Type,
-			Link:         link,
+			Url:          url,
 			Size:         item.Size,
 		})
 	}
@@ -349,18 +349,18 @@ func (c *Client) FullIndex(ctx context.Context, scope *IndexScope) ([]*IndexEntr
 			continue
 		}
 
-		link := baseURL
+		url := baseURL
 		if item.Type == "dir" {
-			link = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
+			url = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
 		} else {
-			link = fmt.Sprintf("%s/%s", baseURL, item.Href)
+			url = fmt.Sprintf("%s/%s", baseURL, item.Href)
 		}
 
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
 			Type:         item.Type,
-			Link:         link,
+			Url:          url,
 			Size:         item.Size,
 		})
 	}
