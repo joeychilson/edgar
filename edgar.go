@@ -556,21 +556,21 @@ func (c *Client) FilingDocuments(ctx context.Context, cik string, accessionNumbe
 
 // CompanyProfile represents a company's information from SEC submissions
 type CompanyProfile struct {
-	CIK           string   `json:"cik"`
-	EntityType    string   `json:"entityType"`
-	SIC           string   `json:"sic"`
-	SICDesc       string   `json:"sicDescription"`
-	Name          string   `json:"name"`
-	Tickers       []string `json:"tickers"`
-	Exchanges     []string `json:"exchanges"`
-	EIN           string   `json:"ein"`
-	Description   string   `json:"description"`
-	Website       string   `json:"website"`
-	Category      string   `json:"category"`
-	FiscalYearEnd string   `json:"fiscalYearEnd"`
-	StateOfIncorp string   `json:"stateOfIncorporation"`
-	Phone         string   `json:"phone"`
-	Flags         string   `json:"flags"`
+	CIK                  string   `json:"cik"`
+	EntityType           string   `json:"entityType"`
+	SIC                  string   `json:"sic"`
+	SICDescription       string   `json:"sicDescription"`
+	Name                 string   `json:"name"`
+	Tickers              []string `json:"tickers"`
+	Exchanges            []string `json:"exchanges"`
+	EIN                  string   `json:"ein"`
+	Description          string   `json:"description"`
+	Website              string   `json:"website"`
+	Category             string   `json:"category"`
+	FiscalYearEnd        string   `json:"fiscalYearEnd"`
+	StateOfIncorporation string   `json:"stateOfIncorporation"`
+	Phone                string   `json:"phone"`
+	Flags                string   `json:"flags"`
 }
 
 // CompanyProfile retrieves company information for a given CIK
@@ -584,38 +584,38 @@ func (c *Client) CompanyProfile(ctx context.Context, cik string) (*CompanyProfil
 	}
 
 	return &CompanyProfile{
-		CIK:           submissions.CIK,
-		EntityType:    submissions.EntityType,
-		SIC:           submissions.SIC,
-		SICDesc:       submissions.SICDesc,
-		Name:          submissions.Name,
-		Tickers:       submissions.Tickers,
-		Exchanges:     submissions.Exchanges,
-		EIN:           submissions.EIN,
-		Description:   submissions.Description,
-		Website:       submissions.Website,
-		Category:      submissions.Category,
-		FiscalYearEnd: submissions.FiscalYearEnd,
-		StateOfIncorp: submissions.StateOfIncorp,
-		Phone:         submissions.Phone,
-		Flags:         submissions.Flags,
+		CIK:                  submissions.CIK,
+		EntityType:           submissions.EntityType,
+		SIC:                  submissions.SIC,
+		SICDescription:       submissions.SICDesc,
+		Name:                 submissions.Name,
+		Tickers:              submissions.Tickers,
+		Exchanges:            submissions.Exchanges,
+		EIN:                  submissions.EIN,
+		Description:          submissions.Description,
+		Website:              submissions.Website,
+		Category:             submissions.Category,
+		FiscalYearEnd:        submissions.FiscalYearEnd,
+		StateOfIncorporation: submissions.StateOfIncorp,
+		Phone:                submissions.Phone,
+		Flags:                submissions.Flags,
 	}, nil
 }
 
 // Filing represents a single filing submission
 type Filing struct {
-	AccessionNumber string    `json:"accessionNumber"`
-	Form            string    `json:"form"`
-	FilingDate      time.Time `json:"filingDate"`
-	ReportDate      time.Time `json:"reportDate,omitempty"`
-	AcceptanceTime  time.Time `json:"acceptanceDateTime"`
-	Act             string    `json:"act,omitempty"`
-	Size            int       `json:"size"`
-	Items           []string  `json:"items,omitempty"`
-	IsXBRL          bool      `json:"isXBRL"`
-	IsInlineXBRL    bool      `json:"isInlineXBRL"`
-	PrimaryDocument string    `json:"primaryDocument"`
-	PrimaryDocDesc  string    `json:"primaryDocDescription"`
+	AccessionNumber            string    `json:"accessionNumber"`
+	Form                       string    `json:"form"`
+	FilingDate                 time.Time `json:"filingDate"`
+	ReportDate                 time.Time `json:"reportDate,omitempty"`
+	AcceptanceTime             time.Time `json:"acceptanceDateTime"`
+	Act                        string    `json:"act,omitempty"`
+	Size                       int       `json:"size"`
+	Items                      []string  `json:"items,omitempty"`
+	IsXBRL                     bool      `json:"isXBRL"`
+	IsInlineXBRL               bool      `json:"isInlineXBRL"`
+	PrimaryDocument            string    `json:"primaryDocument"`
+	PrimaryDocumentDescription string    `json:"primaryDocumentDescription"`
 }
 
 // FilingFilter is used to filter filings
@@ -771,7 +771,7 @@ func processFilings(recent rawFilings) ([]*Filing, error) {
 			filing.PrimaryDocument = recent.PrimaryDoc[i]
 		}
 		if i < len(recent.PrimaryDocDesc) {
-			filing.PrimaryDocDesc = recent.PrimaryDocDesc[i]
+			filing.PrimaryDocumentDescription = recent.PrimaryDocDesc[i]
 		}
 
 		filings = append(filings, filing)
