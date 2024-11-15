@@ -95,15 +95,13 @@ func validateDailyIndexRange(year, quarter int) error {
 
 // DailyIndex retrieves the daily filings index directory listing for a specific year and quarter
 func (c *Client) DailyIndex(ctx context.Context, year, quarter int) ([]*IndexEntry, error) {
-	const baseURL = "https://www.sec.gov/Archives/edgar/daily-index"
-
 	if err := validateDailyIndexRange(year, quarter); err != nil {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%d/QTR%d/index.json", baseURL, year, quarter)
+	url := fmt.Sprintf("%s/%d/QTR%d", "https://www.sec.gov/Archives/edgar/daily-index", year, quarter)
 
-	resp, err := c.get(ctx, url)
+	resp, err := c.get(ctx, fmt.Sprintf("%s/index.json", url))
 	if err != nil {
 		return nil, err
 	}
@@ -133,18 +131,11 @@ func (c *Client) DailyIndex(ctx context.Context, year, quarter int) ([]*IndexEnt
 			continue
 		}
 
-		url := baseURL
-		if item.Type == "dir" {
-			url = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
-		} else {
-			url = fmt.Sprintf("%s/%s", baseURL, item.Href)
-		}
-
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
 			Type:         item.Type,
-			Url:          url,
+			Url:          fmt.Sprintf("%s/%s", url, item.Href),
 			Size:         item.Size,
 		})
 	}
@@ -171,15 +162,13 @@ func validateFullIndexRange(year, quarter int) error {
 
 // FullIndex retrieves the full index directory listing for a specific year and quarter
 func (c *Client) FullIndex(ctx context.Context, year, quarter int) ([]*IndexEntry, error) {
-	const baseURL = "https://www.sec.gov/Archives/edgar/full-index"
-
 	if err := validateFullIndexRange(year, quarter); err != nil {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%d/QTR%d/index.json", baseURL, year, quarter)
+	url := fmt.Sprintf("%s/%d/QTR%d", "https://www.sec.gov/Archives/edgar/full-index", year, quarter)
 
-	resp, err := c.get(ctx, url)
+	resp, err := c.get(ctx, fmt.Sprintf("%s/index.json", url))
 	if err != nil {
 		return nil, err
 	}
@@ -209,18 +198,11 @@ func (c *Client) FullIndex(ctx context.Context, year, quarter int) ([]*IndexEntr
 			continue
 		}
 
-		url := baseURL
-		if item.Type == "dir" {
-			url = fmt.Sprintf("%s/%s/", baseURL, strings.TrimSuffix(item.Href, "/"))
-		} else {
-			url = fmt.Sprintf("%s/%s", baseURL, item.Href)
-		}
-
 		entries = append(entries, &IndexEntry{
 			LastModified: modTime,
 			Name:         item.Name,
 			Type:         item.Type,
-			Url:          url,
+			Url:          fmt.Sprintf("%s/%s", url, item.Href),
 			Size:         item.Size,
 		})
 	}
