@@ -493,8 +493,8 @@ type FilingDocument struct {
 
 // DocumentFilter provides filtering options for filing directory entries
 type DocumentFilter struct {
-	Name       string // Filter by file name (case-insensitive)
-	Extension  string // Filter by file extension (e.g., ".htm", ".xml")
+	Document   string // Filter by document name
+	Extension  string // Filter by document extension (e.g., ".htm", ".xml")
 	MaxResults int    // Limit the number of results
 }
 
@@ -529,7 +529,7 @@ func (c *Client) FilingDocuments(ctx context.Context, cik string, accessionNumbe
 	files := make([]*FilingDocument, 0, len(filingDir.Directory.Items))
 	for _, file := range filingDir.Directory.Items {
 		if filter != nil {
-			if filter.Name != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(filter.Name)) {
+			if filter.Document != "" && !strings.Contains(strings.ToLower(file.Name), strings.ToLower(filter.Document)) {
 				continue
 			}
 			if filter.Extension != "" && !strings.HasSuffix(strings.ToLower(file.Name), strings.ToLower(filter.Extension)) {

@@ -41,7 +41,7 @@ func main() {
 	}
 
 	file, err := client.FilingDocuments(ctx, tickers[0].CIK, filings[0].AccessionNumber, &edgar.DocumentFilter{
-		Name: filings[0].PrimaryDocument,
+		Document: filings[0].PrimaryDocument,
 	})
 	if err != nil {
 		log.Fatal(err)
