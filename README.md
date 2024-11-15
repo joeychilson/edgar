@@ -23,8 +23,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// You should set a custom user agent or you could be blocked if the default user agent is blocked.
-	// You are allowed 10 requests per second
+	// You should set a custom user agent or you will be rate limited.
 	client := edgar.NewClient(edgar.WithUserAgent("CompanyName <contact@email.com>"))
 
 	tickers, err := client.CompanyList(ctx, &edgar.CompanyListFilter{
@@ -41,7 +40,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	file, err := client.FilingDocuments(ctx, tickers[0].CIK, filings[0].AccessionNumber, &edgar.DocumentFilterOptions{
+	file, err := client.FilingDocuments(ctx, tickers[0].CIK, filings[0].AccessionNumber, &edgar.DocumentFilter{
 		Name: filings[0].PrimaryDocument,
 	})
 	if err != nil {
